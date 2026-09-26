@@ -41,6 +41,15 @@ jobs:
           rc=$?
           set -e
           echo "BASE_EXIT=$rc"
+          if [ ! -f "$RUNNER_TEMP/base.xml" ]; then
+            BASE_LOG="$RUNNER_TEMP/base.log" python3 - <<'PYSTATUS'
+          import os
+          s=open(os.environ['BASE_LOG'], errors='replace').read()
+          labels={'broker_start_failure':'Kafka did not start','feature_command_failure':'Could not','feature_upgrade_failure':'Failed to upgrade','pytest_usage_error':'pytest: error:','pytest_collection_error':'ERROR collecting','java_error':'Exception in thread','shell_missing':'No such file or directory','feature_log':'kafka-share-features.log'}
+          print('BASE_DIAGNOSTICS', {k:v in s for k,v in labels.items()}, 'bytes', len(s))
+          PYSTATUS
+            exit 1
+          fi
           if [ "$rc" -eq 0 ]; then echo 'Unexpected baseline pass'; exit 1; fi
           python3 - <<'PYXML'
           import xml.etree.ElementTree as ET
