@@ -1,0 +1,85 @@
+name: aiokafka 1089 Docker proof
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+jobs:
+  proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@v4
+      - name: Retrieve pinned upstream and prepare tests
+        shell: bash
+        env:
+          PROOF_BUNDLE_KEY: ${{ secrets.PROOF_BUNDLE_KEY }}
+        run: |
+          git clone https://github.com/aio-libs/aiokafka.git /tmp/aiokafka
+          cd /tmp/aiokafka
+          git checkout 13a6400024621371254f32e17bd489313dbcc63f
+          base64 -d "$GITHUB_WORKSPACE/proof-bundle.enc.b64" > /tmp/proof-bundle.enc
+          openssl enc -d -aes-256-cbc -pbkdf2 -iter 250000 -in /tmp/proof-bundle.enc -out /tmp/aiokafka-1089-proof.tar.gz -pass env:PROOF_BUNDLE_KEY
+          echo 'Encrypted bundle decrypted'
+          tar -xzf /tmp/aiokafka-1089-proof.tar.gz
+          git apply --check acceptance.patch
+          git apply acceptance.patch
+          cp Dockerfile test.sh .
+          chmod +x test.sh
+          echo "BASE_SOURCE=$(git rev-parse HEAD)"
+      - name: Build real Olympus-base image and report size
+        shell: bash
+        run: |
+          cd /tmp/aiokafka
+          time docker build --progress=plain -t olympus-aiokafka-1089:base .
+          docker image inspect olympus-aiokafka-1089:base --format 'base image bytes={{.Size}}'
+      - name: Verify all acceptance tests fail on baseline without network
+        shell: bash
+        run: |
+          set +e
+          cd /tmp/aiokafka
+          time docker run --rm --network none --memory 3g -v "$RUNNER_TEMP:/artifacts" olympus-aiokafka-1089:base ./test.sh --output_path /artifacts/base.xml new > "$RUNNER_TEMP/base.log" 2>&1
+          rc=$?
+          set -e
+          echo "BASE_EXIT=$rc"
+          if [ "$rc" -eq 0 ]; then echo 'Unexpected baseline pass'; exit 1; fi
+          python3 - <<'PYXML'
+          import xml.etree.ElementTree as ET
+          r=ET.parse(__import__('os').environ['RUNNER_TEMP'] + '/base.xml').getroot()
+          suite = next(r.iter('testsuite'))
+          print('BASE_COUNTS', {k:suite.get(k) for k in ('tests','failures','errors','skipped')})
+          assert int(suite.get('tests',0)) == 4, 'Expected four baseline tests'
+          assert int(suite.get('failures',0)) + int(suite.get('errors',0)) == 4, 'All tests must fail or error without reference'
+          PYXML
+      - name: Apply reference and build image
+        shell: bash
+        run: |
+          cd /tmp/aiokafka
+          git apply --check reference.patch
+          git apply reference.patch
+          time docker build --progress=plain -t olympus-aiokafka-1089:reference .
+          docker image inspect olympus-aiokafka-1089:reference --format 'reference image bytes={{.Size}}'
+      - name: Repeat no-network reference run twice for stability
+        shell: bash
+        run: |
+          set -e
+          for round in 1 2; do
+            echo "REFERENCE_ROUND=$round"
+            time docker run --rm --network none --memory 3g -v "$RUNNER_TEMP:/artifacts" olympus-aiokafka-1089:reference ./test.sh --output_path /artifacts/ref-$round.xml new > "$RUNNER_TEMP/ref-$round.log" 2>&1 || { echo "REFERENCE_FAIL_ROUND=$round"; exit 1; }
+            ROUND="$round" python3 - <<'PYXML'
+          import os, xml.etree.ElementTree as ET
+          x=next(ET.parse(os.environ['RUNNER_TEMP']+'/ref-'+os.environ['ROUND']+'.xml').iter('testsuite'))
+          print('REFERENCE_COUNTS', os.environ['ROUND'], {k:x.get(k) for k in ('tests','failures','errors','skipped')})
+          assert int(x.get('tests',0)) == 4 and int(x.get('failures',0)) == 0 and int(x.get('errors',0)) == 0
+          PYXML
+          done
+      - name: Run base regressions against reference
+        shell: bash
+        run: |
+          time docker run --rm --network none --memory 3g -v "$RUNNER_TEMP:/artifacts" olympus-aiokafka-1089:reference ./test.sh --output_path /artifacts/base-regressions.xml base > "$RUNNER_TEMP/regressions.log" 2>&1 || { echo 'REGRESSIONS_FAILED'; exit 1; }
+          python3 - <<'PYXML'
+          import os, xml.etree.ElementTree as ET
+          x=next(ET.parse(os.environ['RUNNER_TEMP']+'/base-regressions.xml').iter('testsuite'))
+          print('REGRESSION_COUNTS', {k:x.get(k) for k in ('tests','failures','errors','skipped')})
+          assert int(x.get('failures',0)) == 0 and int(x.get('errors',0)) == 0
+          PYXML
