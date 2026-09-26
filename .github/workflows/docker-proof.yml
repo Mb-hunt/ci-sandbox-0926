@@ -45,7 +45,7 @@ jobs:
             BASE_LOG="$RUNNER_TEMP/base.log" python3 - <<'PYSTATUS'
           import os
           s=open(os.environ['BASE_LOG'], errors='replace').read()
-          labels={'broker_start_failure':'Kafka did not start','feature_command_failure':'Could not','feature_upgrade_failure':'Failed to upgrade','pytest_usage_error':'pytest: error:','pytest_collection_error':'ERROR collecting','java_error':'Exception in thread','shell_missing':'No such file or directory','feature_log':'kafka-share-features.log'}
+          labels={'broker_start_failure':'Kafka did not start','could_not_connect':'Could not connect','feature_version_error':'UnsupportedVersionException','unknown_server_error':'UNKNOWN_SERVER_ERROR','not_coordinator':'NOT_COORDINATOR','timeout_exception':'TimeoutException','feature_update_error':'FeatureUpdateException','invalid_request':'INVALID_REQUEST','connection_refused':'Connection refused','network_unreachable':'Network is unreachable','address_unavailable':'Cannot assign requested address','security_exception':'SecurityException','java_error':'Exception in thread','shell_missing':'No such file or directory','feature_log':'kafka-share-features.log'}
           print('BASE_DIAGNOSTICS', {k:v in s for k,v in labels.items()}, 'bytes', len(s))
           PYSTATUS
             exit 1
