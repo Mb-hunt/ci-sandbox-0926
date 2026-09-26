@@ -24,7 +24,6 @@ jobs:
           tar -xzf /tmp/aiokafka-1089-proof.tar.gz
           git apply --check acceptance.patch
           git apply acceptance.patch
-          cp Dockerfile test.sh .
           chmod +x test.sh
           echo "BASE_SOURCE=$(git rev-parse HEAD)"
       - name: Build real Olympus-base image and report size
