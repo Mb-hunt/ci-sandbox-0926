@@ -25,6 +25,8 @@ jobs:
           git apply --check acceptance.patch
           git apply acceptance.patch
           chmod +x test.sh
+          sed -i 's/ pytest \&\&/ pytest pytest-asyncio pytest-mock pytest-cov \&\&/' Dockerfile
+          grep -q 'pytest pytest-asyncio pytest-mock pytest-cov' Dockerfile
           echo "BASE_SOURCE=$(git rev-parse HEAD)"
       - name: Build real Olympus-base image and report size
         shell: bash
